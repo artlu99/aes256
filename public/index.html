@@ -1,0 +1,458 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>AES-256 Local Encryption (Web Crypto API)</title>
+    <style>
+        body { font-family: Arial, sans-serif; max-width: 800px; margin: 0 auto; padding: 20px; }
+        .container { margin-bottom: 15px; }
+        label { display: block; margin-bottom: 5px; font-weight: bold; }
+        textarea, input { width: 100%; padding: 8px; border: 1px solid #ddd; border-radius: 4px; }
+        button { padding: 10px 15px; margin: 5px; background: #007cba; color: white; border: none; border-radius: 4px; cursor: pointer; }
+        button:hover { background: #005a87; }
+        button:disabled { background: #ccc; cursor: not-allowed; }
+        .tabs { display: flex; margin-bottom: 10px; }
+        .tab { padding: 10px 20px; background: #f0f0f0; cursor: pointer; border-radius: 4px 4px 0 0; margin-right: 5px; }
+        .tab.active { background: #007cba; color: white; }
+        .tab-content { display: none; padding: 15px; border: 1px solid #ddd; border-radius: 0 4px 4px 4px; }
+        .tab-content.active { display: block; }
+        .compatibility { background: #f5f5f5; padding: 10px; border-radius: 4px; margin-top: 20px; }
+        .error { color: #d00; font-weight: bold; }
+        .success { color: #080; font-weight: bold; }
+        .status { margin-top: 10px; padding: 10px; border-radius: 4px; }
+        .debug { font-family: monospace; font-size: 12px; background: #f0f0f0; padding: 10px; border-radius: 4px; margin-top: 10px; display: none; }
+        .footer { margin-top: 40px; padding: 20px; background: #f8f9fa; border-top: 1px solid #e9ecef; text-align: center; color: #6c757d; }
+        .footer-content { display: flex; align-items: center; justify-content: center; gap: 8px; }
+        .footer-link { display: inline-flex; align-items: center; text-decoration: none; color: #6c757d; }
+        .footer-link:hover { color: #495057; }
+        .footer-icon { filter: brightness(0.7); }
+    </style>
+</head>
+<body>
+    <h1>AES-256 Local Encryption (Web Crypto API)</h1>
+
+    <div class="tabs">
+        <div class="tab active" onclick="switchTab('encrypt')">Encrypt</div>
+        <div class="tab" onclick="switchTab('decrypt')">Decrypt</div>
+    </div>
+
+    <!-- Encrypt Tab -->
+    <div id="encrypt-tab" class="tab-content active">
+        <div class="container">
+            <label>Text to encrypt:</label>
+            <textarea id="plaintext" rows="3">Hello, this is a secret message!</textarea>
+        </div>
+
+        <div class="container">
+            <label>Password:</label>
+            <input type="password" id="encryptPassword" placeholder="Enter encryption password">
+        </div>
+
+        <div class="container">
+            <button onclick="encryptOpenSSL()" id="encryptBtn">Encrypt</button>
+            <button onclick="testCompatibility()">Test Compatibility</button>
+        </div>
+
+        <div class="container">
+            <label>Encrypted Result (Base64):</label>
+            <textarea id="encryptResult" rows="4" readonly></textarea>
+        </div>
+
+        <div class="container">
+            <button onclick="copyToClipboard('encryptResult')">Copy to Clipboard</button>
+            <button onclick="openSSLDecryptTest()">Test OpenSSL Decrypt</button>
+        </div>
+    </div>
+
+    <!-- Decrypt Tab -->
+    <div id="decrypt-tab" class="tab-content">
+        <div class="container">
+            <label>Ciphertext to decrypt (OpenSSL format):</label>
+            <textarea id="ciphertext" rows="4" placeholder="Paste OpenSSL-compatible ciphertext here (Base64 format)"></textarea>
+        </div>
+
+        <div class="container">
+            <label>Password:</label>
+            <input type="password" id="decryptPassword" placeholder="Enter decryption password">
+        </div>
+
+        <div class="container">
+            <button onclick="decryptOpenSSL()" id="decryptBtn">Decrypt</button>
+        </div>
+
+        <div class="container">
+            <label>Decrypted Result:</label>
+            <textarea id="decryptResult" rows="3" readonly></textarea>
+        </div>
+
+        <div class="container">
+            <button onclick="copyToClipboard('decryptResult')">Copy to Clipboard</button>
+        </div>
+    </div>
+
+    <div id="status" class="status"></div>
+    <div id="debug" class="debug"></div>
+
+    <div class="compatibility">
+        <h3>OpenSSL Command Line Compatibility</h3>
+        <p><strong>To encrypt with OpenSSL:</strong></p>
+        <code>echo "your_text" | openssl enc -aes-256-cbc -salt -pbkdf2 -base64 -pass pass:your_password</code>
+
+        <p><strong>To decrypt with OpenSSL:</strong></p>
+        <code>echo "U2FsdGVkX1..." | openssl enc -aes-256-cbc -d -salt -pbkdf2 -base64 -pass pass:your_password</code>
+
+        <button onclick="toggleDebug()">Toggle Debug Info</button>
+    </div>
+
+    <!-- Footer -->
+    <div class="footer">
+        <div class="footer-content">
+            <span>FOSS by artlu99</span>
+            <a href="https://github.com/artlu99/aes256" target="_blank" rel="noopener noreferrer" class="footer-link">
+                <img height="24" width="24" src="https://cdn.jsdelivr.net/npm/simple-icons@v15/icons/github.svg" alt="GitHub" class="footer-icon" />
+            </a>
+        </div>
+    </div>
+
+    <script>
+        let currentTab = 'encrypt';
+
+        function switchTab(tabName) {
+            document.querySelectorAll('.tab-content').forEach(tab => {
+                tab.classList.remove('active');
+            });
+            document.querySelectorAll('.tab').forEach(tab => {
+                tab.classList.remove('active');
+            });
+
+            document.getElementById(tabName + '-tab').classList.add('active');
+            document.querySelector(`.tab[onclick="switchTab('${tabName}')"]`).classList.add('active');
+            currentTab = tabName;
+        }
+
+        function toggleDebug() {
+            const debug = document.getElementById('debug');
+            debug.style.display = debug.style.display === 'none' ? 'block' : 'none';
+        }
+
+        function debugLog(message) {
+            const debug = document.getElementById('debug');
+            debug.innerHTML += message + '\n';
+        }
+
+        // Convert between ArrayBuffer and Base64
+        function arrayBufferToBase64(buffer) {
+            const bytes = new Uint8Array(buffer);
+            let binary = '';
+            for (let i = 0; i < bytes.byteLength; i++) {
+                binary += String.fromCharCode(bytes[i]);
+            }
+            return btoa(binary);
+        }
+
+        function base64ToArrayBuffer(base64) {
+            // Handle potential URL encoding issues
+            const cleanBase64 = base64.replace(/\s/g, '');
+            const binary = atob(cleanBase64);
+            const bytes = new Uint8Array(binary.length);
+            for (let i = 0; i < binary.length; i++) {
+                bytes[i] = binary.charCodeAt(i);
+            }
+            return bytes.buffer;
+        }
+
+        // Derive key from password using PBKDF2 (OpenSSL compatible)
+        async function deriveKey(password, salt, iterations = 10000) {
+            const encoder = new TextEncoder();
+            const keyMaterial = await crypto.subtle.importKey(
+                'raw',
+                encoder.encode(password),
+                'PBKDF2',
+                false,
+                ['deriveBits']
+            );
+
+            // Derive key + IV together (48 bytes = 32-byte key + 16-byte IV)
+            const keyIvBuffer = await crypto.subtle.deriveBits(
+                {
+                    name: 'PBKDF2',
+                    salt: salt,
+                    iterations: iterations,
+                    hash: 'SHA-256'
+                },
+                keyMaterial,
+                384 // 384 bits = 48 bytes
+            );
+
+            const keyIv = new Uint8Array(keyIvBuffer);
+            const keyBuffer = keyIv.slice(0, 32).buffer; // First 32 bytes = key
+            const ivBuffer = keyIv.slice(32, 48).buffer; // Next 16 bytes = IV
+
+            const key = await crypto.subtle.importKey(
+                'raw',
+                keyBuffer,
+                { name: 'AES-CBC' },
+                false,
+                ['encrypt', 'decrypt']
+            );
+
+            return { key, iv: new Uint8Array(ivBuffer) };
+        }
+
+        // Encrypt using OpenSSL-compatible method
+        async function encryptOpenSSL() {
+            try {
+                const plaintext = document.getElementById('plaintext').value;
+                const password = document.getElementById('encryptPassword').value;
+
+                if (!password) {
+                    showMessage('Please enter a password', 'error');
+                    return;
+                }
+
+                if (!plaintext) {
+                    showMessage('Please enter text to encrypt', 'error');
+                    return;
+                }
+
+                const encryptBtn = document.getElementById('encryptBtn');
+                encryptBtn.disabled = true;
+                encryptBtn.textContent = 'Encrypting...';
+
+                showMessage('Encrypting...', 'info');
+                debugLog('=== Starting Encryption ===');
+
+                // Generate random salt (8 bytes like OpenSSL)
+                const salt = crypto.getRandomValues(new Uint8Array(8));
+                debugLog(`Salt: ${arrayBufferToBase64(salt)}`);
+
+                // Derive key and IV using PBKDF2
+                const { key, iv } = await deriveKey(password, salt);
+                debugLog(`IV: ${arrayBufferToBase64(iv.buffer)}`);
+
+                // Encrypt the data
+                const encoder = new TextEncoder();
+                const data = encoder.encode(plaintext);
+
+                const encrypted = await crypto.subtle.encrypt(
+                    { name: 'AES-CBC', iv: iv },
+                    key,
+                    data
+                );
+
+                debugLog(`Encrypted data length: ${encrypted.byteLength} bytes`);
+
+                // Combine in OpenSSL format: "Salted__" + salt + encrypted data
+                const saltedHeader = new TextEncoder().encode('Salted__');
+                const combined = new Uint8Array(saltedHeader.length + salt.length + encrypted.byteLength);
+
+                combined.set(saltedHeader, 0);
+                combined.set(salt, saltedHeader.length);
+                combined.set(new Uint8Array(encrypted), saltedHeader.length + salt.length);
+
+                const resultBase64 = arrayBufferToBase64(combined);
+                document.getElementById('encryptResult').value = resultBase64;
+
+                debugLog(`Final Base64: ${resultBase64}`);
+                showMessage('Encryption successful!', 'success');
+
+            } catch (error) {
+                showMessage('Encryption error: ' + error.message, 'error');
+                console.error('Encryption error:', error);
+                debugLog(`Encryption error: ${error.message}`);
+            } finally {
+                const encryptBtn = document.getElementById('encryptBtn');
+                encryptBtn.disabled = false;
+                encryptBtn.textContent = 'Encrypt';
+            }
+        }
+
+        // Decrypt OpenSSL-compatible encrypted data
+        async function decryptOpenSSL() {
+            try {
+                const ciphertextBase64 = document.getElementById('ciphertext').value;
+                const password = document.getElementById('decryptPassword').value;
+
+                if (!password) {
+                    showMessage('Please enter a password', 'error');
+                    return;
+                }
+
+                if (!ciphertextBase64) {
+                    showMessage('Please enter ciphertext to decrypt', 'error');
+                    return;
+                }
+
+                const decryptBtn = document.getElementById('decryptBtn');
+                decryptBtn.disabled = true;
+                decryptBtn.textContent = 'Decrypting...';
+
+                showMessage('Decrypting...', 'info');
+                debugLog('=== Starting Decryption ===');
+                debugLog(`Input Base64: ${ciphertextBase64}`);
+
+                // Parse Base64 input
+                const combined = new Uint8Array(base64ToArrayBuffer(ciphertextBase64));
+                debugLog(`Total length: ${combined.length} bytes`);
+
+                // Check for "Salted__" header (8 bytes)
+                if (combined.length < 16) {
+                    throw new Error('Data too short to be valid OpenSSL format');
+                }
+
+                const saltedHeader = combined.slice(0, 8);
+                const headerText = new TextDecoder().decode(saltedHeader);
+                debugLog(`Header: ${headerText}`);
+
+                if (headerText !== 'Salted__') {
+                    throw new Error('Invalid OpenSSL format: missing Salted__ header');
+                }
+
+                // Extract salt (8 bytes after header)
+                const salt = combined.slice(8, 16);
+                debugLog(`Salt found: ${arrayBufferToBase64(salt)}`);
+
+                // The rest is the encrypted data (which includes the IV in OpenSSL's key derivation)
+                const encryptedData = combined.slice(16);
+                debugLog(`Encrypted data length: ${encryptedData.length} bytes`);
+
+                if (encryptedData.length < 16) {
+                    throw new Error('Encrypted data too short');
+                }
+
+                // Derive key and IV using PBKDF2
+                const { key, iv } = await deriveKey(password, salt);
+                debugLog(`Derived IV: ${arrayBufferToBase64(iv.buffer)}`);
+
+                // Decrypt the data
+                const decrypted = await crypto.subtle.decrypt(
+                    { name: 'AES-CBC', iv: iv },
+                    key,
+                    encryptedData
+                );
+
+                // Convert decrypted data to text
+                const decoder = new TextDecoder();
+                const plaintext = decoder.decode(decrypted);
+
+                document.getElementById('decryptResult').value = plaintext;
+                debugLog(`Decryption successful: ${plaintext}`);
+                showMessage('Decryption successful!', 'success');
+
+            } catch (error) {
+                showMessage('Decryption error: ' + error.message, 'error');
+                console.error('Decryption error:', error);
+                debugLog(`Decryption error: ${error.message}`);
+            } finally {
+                const decryptBtn = document.getElementById('decryptBtn');
+                decryptBtn.disabled = false;
+                decryptBtn.textContent = 'Decrypt';
+            }
+        }
+
+        async function testCompatibility() {
+            // Test with known values
+            const testPassword = "test123";
+            const testText = "Hello World";
+
+            document.getElementById('encryptPassword').value = testPassword;
+            document.getElementById('plaintext').value = testText;
+
+            await encryptOpenSSL();
+
+            // Now try to decrypt what we just encrypted
+            const encrypted = document.getElementById('encryptResult').value;
+            document.getElementById('ciphertext').value = encrypted;
+            document.getElementById('decryptPassword').value = testPassword;
+
+            switchTab('decrypt');
+            setTimeout(() => {
+                decryptOpenSSL();
+            }, 100);
+        }
+
+        function openSSLDecryptTest() {
+            const encrypted = document.getElementById('encryptResult').value;
+            const password = document.getElementById('encryptPassword').value;
+
+            if (!encrypted) {
+                showMessage('First encrypt some text', 'error');
+                return;
+            }
+
+            showMessage(`OpenSSL command:\necho "${encrypted}" | openssl enc -aes-256-cbc -d -salt -pbkdf2 -base64 -pass pass:${password}`, 'info');
+        }
+
+        // Fixed clipboard function
+        async function copyToClipboard(elementId) {
+            try {
+                const textarea = document.getElementById(elementId);
+                const textToCopy = textarea.value;
+
+                if (!textToCopy) {
+                    showMessage('Nothing to copy', 'error');
+                    return;
+                }
+
+                // Modern clipboard API with fallback
+                if (navigator.clipboard && window.isSecureContext) {
+                    await navigator.clipboard.writeText(textToCopy);
+                    showMessage('Copied to clipboard!', 'success');
+                } else {
+                    // Fallback for older browsers or insecure contexts
+                    textarea.select();
+                    textarea.setSelectionRange(0, 99999);
+
+                    const successful = document.execCommand('copy');
+                    if (successful) {
+                        showMessage('Copied to clipboard!', 'success');
+                    } else {
+                        throw new Error('Clipboard copy failed');
+                    }
+                }
+            } catch (error) {
+                console.error('Clipboard error:', error);
+
+                // Last resort: show the text and let user copy manually
+                const textarea = document.getElementById(elementId);
+                textarea.select();
+                textarea.setSelectionRange(0, 99999);
+
+                showMessage('Select the text and press Ctrl+C to copy', 'info');
+            }
+        }
+
+        function showMessage(message, type) {
+            const status = document.getElementById('status');
+            status.textContent = message;
+            status.className = `status ${type}`;
+
+            if (type === 'error') {
+                status.style.background = '#ffe6e6';
+                status.style.color = '#d00';
+            } else if (type === 'success') {
+                status.style.background = '#e6ffe6';
+                status.style.color = '#080';
+            } else {
+                status.style.background = '#e6f3ff';
+                status.style.color = '#007cba';
+            }
+        }
+
+        // Auto-switch to decrypt tab when ciphertext is pasted
+        document.getElementById('ciphertext').addEventListener('paste', function() {
+            setTimeout(() => {
+                if (this.value && this.value.length > 0) {
+                    switchTab('decrypt');
+                }
+            }, 100);
+        });
+
+        // Test Web Crypto API availability
+        if (!window.crypto || !window.crypto.subtle) {
+            showMessage('Web Crypto API is not supported in this browser. Please use a modern browser.', 'error');
+        } else {
+            showMessage('Web Crypto API is ready!', 'success');
+        }
+    </script>
+</body>
+</html>
