@@ -3,6 +3,8 @@
 <head>
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+    <meta http-equiv="X-Frame-Options" content="DENY">
+    <meta http-equiv="Content-Security-Policy" content="frame-ancestors 'none'">
     <title>AES-256 Local Encryption (Web Crypto API)</title>
     <style>
         * { box-sizing: border-box; }
@@ -131,6 +133,26 @@
             word-break: break-all;
             white-space: pre-wrap;
         }
+        .password-strength {
+            margin-top: 8px;
+            height: 4px;
+            background: #e0e0e0;
+            border-radius: 2px;
+            overflow: hidden;
+        }
+        .password-strength-bar {
+            height: 100%;
+            transition: width 0.3s, background-color 0.3s;
+            border-radius: 2px;
+        }
+        .password-strength-bar.weak { background: #c00; }
+        .password-strength-bar.fair { background: #f90; }
+        .password-strength-bar.good { background: #080; }
+        .password-strength-text {
+            font-size: 0.8125rem;
+            margin-top: 4px;
+            color: #666;
+        }
         .footer {
             margin-top: 32px;
             padding: 24px 16px;
@@ -179,7 +201,11 @@
 
         <div class="container">
             <label>Password:</label>
-            <input type="password" id="encryptPassword" placeholder="Enter encryption password" autocomplete="new-password">
+            <input type="password" id="encryptPassword" placeholder="Enter encryption password" autocomplete="new-password" oninput="updatePasswordStrength('encrypt')">
+            <div class="password-strength">
+                <div class="password-strength-bar" id="encryptStrengthBar"></div>
+            </div>
+            <div class="password-strength-text" id="encryptStrengthText"></div>
         </div>
 
         <div class="container btn-row">
@@ -213,7 +239,11 @@
 
         <div class="container">
             <label>Password:</label>
-            <input type="password" id="decryptPassword" placeholder="Enter decryption password" autocomplete="current-password">
+            <input type="password" id="decryptPassword" placeholder="Enter decryption password" autocomplete="current-password" oninput="updatePasswordStrength('decrypt')">
+            <div class="password-strength">
+                <div class="password-strength-bar" id="decryptStrengthBar"></div>
+            </div>
+            <div class="password-strength-text" id="decryptStrengthText"></div>
         </div>
 
         <div class="container btn-row">
@@ -280,7 +310,52 @@
 
         function debugLog(message) {
             const debug = document.getElementById('debug');
-            debug.innerHTML += message + '\n';
+            const line = document.createElement('div');
+            line.textContent = message;
+            debug.appendChild(line);
+        }
+
+        // Password strength checker
+        function checkPasswordStrength(password) {
+            let score = 0;
+            if (!password) return { score: 0, label: '' };
+
+            // Length checks
+            if (password.length >= 8) score++;
+            if (password.length >= 12) score++;
+            if (password.length >= 16) score++;
+
+            // Character variety
+            if (/[a-z]/.test(password)) score++;
+            if (/[A-Z]/.test(password)) score++;
+            if (/[0-9]/.test(password)) score++;
+            if (/[^a-zA-Z0-9]/.test(password)) score++;
+
+            // Cap at 6
+            if (score > 6) score = 6;
+
+            if (score <= 2) return { score, label: 'Weak', class: 'weak' };
+            if (score <= 4) return { score, label: 'Fair', class: 'fair' };
+            return { score, label: 'Good', class: 'good' };
+        }
+
+        function updatePasswordStrength(prefix) {
+            const password = document.getElementById(prefix + 'Password').value;
+            const bar = document.getElementById(prefix + 'StrengthBar');
+            const text = document.getElementById(prefix + 'StrengthText');
+
+            const strength = checkPasswordStrength(password);
+
+            // Update bar
+            bar.style.width = (strength.score / 6 * 100) + '%';
+            bar.className = 'password-strength-bar ' + strength.class;
+
+            // Update text
+            if (password.length === 0) {
+                text.textContent = '';
+            } else {
+                text.textContent = 'Password strength: ' + strength.label;
+            }
         }
 
         // Convert between ArrayBuffer and Base64
@@ -305,7 +380,7 @@
         }
 
         // Derive key from password using PBKDF2 (OpenSSL compatible)
-        async function deriveKey(password, salt, iterations = 10000) {
+        async function deriveKey(password, salt, iterations = 100000) {
             const encoder = new TextEncoder();
             const keyMaterial = await crypto.subtle.importKey(
                 'raw',
